@@ -81,6 +81,4 @@ public Ingredient findById(String Id) {
 但是创建 `PreparedStatementCreator` 对象的过程并不简单：通常是通过 `PreparedStatementCreatorFactory` 来创建，需要传入你要执行的 SQL 语句字符串以及每个 SQL 中参数的类型。然后对 factory 类调用 `newPreparedStatementCreator()` 方法，传入实际执行 SQL 语句的相关参数，然后就会得到 `PreparedStatementCreator` 对象。   
 当得到了 `PreparedStatementCreator` 对象后，你可以传入 `PreparedStatementCreator` 对象和 `KeyHolder` 对象（这里是一个 `GeneratedKeyHolder` 实例）来调用 `update` 方法，一旦 `update` 完成，你就会通过 `keyHolder.getKey().longValue()` 得到 ID 。
 
-除了直接使用 `JdbcTemplate` 之外，对于简单的 update 可以使用 `SimpleJdbcInsert` 对象，例如 `new SimpleJdbcInsert(jdbc).withTableName("Taco_Order").usingGeneratedKeyColumns("id")` 表示插入将发生在表 *Taco_Order* 上同时会由数据库提供或者返回一个 *id* 的值。
-
- 
+除了直接使用 `JdbcTemplate` 之外，对于简单的 update 可以使用 `SimpleJdbcInsert` 对象，例如 `new SimpleJdbcInsert(jdbc).withTableName("Taco_Order").usingGeneratedKeyColumns("id")` 表示插入将发生在表 *Taco_Order* 上同时会由数据库提供或者返回一个 *id* 的值。`SimpleJdbcInserter` 对象有很多方便的方法，比如 `execute` 和 `executeAndReturnKey` 。他们都接受一个 `Map<String, Object>` 参数，其中键表示表中的列名，而值则代表要插入的列值。
