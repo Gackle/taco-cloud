@@ -82,3 +82,5 @@ public Ingredient findById(String Id) {
 当得到了 `PreparedStatementCreator` 对象后，你可以传入 `PreparedStatementCreator` 对象和 `KeyHolder` 对象（这里是一个 `GeneratedKeyHolder` 实例）来调用 `update` 方法，一旦 `update` 完成，你就会通过 `keyHolder.getKey().longValue()` 得到 ID 。
 
 除了直接使用 `JdbcTemplate` 之外，对于简单的 update 可以使用 `SimpleJdbcInsert` 对象，例如 `new SimpleJdbcInsert(jdbc).withTableName("Taco_Order").usingGeneratedKeyColumns("id")` 表示插入将发生在表 *Taco_Order* 上同时会由数据库提供或者返回一个 *id* 的值。`SimpleJdbcInserter` 对象有很多方便的方法，比如 `execute` 和 `executeAndReturnKey` 。他们都接受一个 `Map<String, Object>` 参数，其中键表示表中的列名，而值则代表要插入的列值。
+
+> 注意，使用了内置的 H2 数据库的话可以访问 [/h2-console](http://localhost:8080/h2-console) 打开数据库页面，同时 JDBC-URL 的信息会在 Spring Boot 启动时输出，一般为 `jdbc:h2:mem:xxxxx` 
