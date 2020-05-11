@@ -18,8 +18,8 @@ import sia.tacocloud.dao.Order;
 import sia.tacocloud.dao.Taco;
 import sia.tacocloud.dao.Ingredient;
 import sia.tacocloud.dao.Ingredient.Type;
-import sia.tacocloud.data.IngredientRepository;
-import sia.tacocloud.data.TacoRepository;
+import sia.tacocloud.jpa.IngredientRepository;
+import sia.tacocloud.jpa.TacoRepository;
 
 @Slf4j
 @Controller
