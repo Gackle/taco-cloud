@@ -9,6 +9,11 @@
 <body>
 <h1>Design your taco！</h1>
 <img th:src="@{/images/TacoCloud.png}" width="40" height="40"/>
+
+<form method="POST" th:action="@{/logout}" id="logoutForm">
+  <input type="submit" value="Logout"/>
+</form>
+
 <form method="post" th:object="${taco}">
 
   <span class="validationError"

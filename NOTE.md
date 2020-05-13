@@ -174,3 +174,335 @@ public Ingredient findById(String Id) {
             inverseJoinColumns = {@JoinColumn(name = "taco")})
     private List<Taco> tacos = new ArrayList<>();
     ```
+   
+# Chapter 4. Securing Spring.
+
+当添加了依赖:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+```
+
+Spring Application 就自动配置了基本的安全验证即 HTTP basic authentication 。默认用户名是 *user* ，密码会在 log file 中出现形如 `Using generated security password: c3bf031f-b649-4e8d-8447-48c2c057282c` 的文本。默认的安全功能包括：
+
+- 全部的 HTTP 请求路径都要求 authentication
+- 不需要指定 roles 角色和 authorities 权限
+- 没有登陆页面
+- authentication 通过 HTTP basic authentication 提供
+- 只有一个用户，用户名为 user 
+
+Spring Security 提供了若干种选项来配置 user store ：
+
+- in-memory user store
+- JDBC-based user store
+- LDAP-backed user store
+- custom user detail service
+
+无论你选择何种 user store ，你可以通过 override 掉 `WebSecurityConfigurerAdapter` 配置基类定义的 `confingure()` 方法来配置。
+
+## in-memory user store
+
+对于 in-memory user store 配置如下所示，设计上采用了 建造者模式 ：
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.inMemoryAuthentication()
+                .withUser("buzz")
+                .password("infinity")
+                .authorities("ROLE_USER")
+                .and()
+                .withUser("woody")
+                .password("bullseye")
+                .authorities("ROLE_USER");
+    }
+// 配置了两个用户以及他们的密码以及 authorities 授权
+}
+```
+
+## JDBC-based user store
+
+上面的配置如果要新增用户和角色，需要改动代码并重新打包发布，使用场景非常有限。大多数情况下我们都会把用户数据维护在一个关系数据库中，这样看来 JDBC-based user store 更加适合。下面的代码则是启用了 JDBC-based user store ：
+
+```java
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    @Autowired
+    DataSource dataSource; // 必须指定 dataSource ，同时使用了 magic of  autowiring
+
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.jdbcAuthentication()
+                .dataSource(dataSource);
+    }
+}
+```
+
+虽然这部分代码可以工作，不过它是假定了你的 data schema 的。从下面的代码 snippet 可以看出 Spring Security 是如何去查找你的用户信息的
+
+```java
+// Spring Security 默认的 SQL Query
+
+// 1. 查找用户的用户名、密码以及是否可用
+public staic final String DEF_USERS_BY_USERNAME_QUERY = 
+    "select username, password, enabled " +
+    "from users " + 
+    "where username = ?";
+// 2. 查找用户被授予的权限
+public static final String DEF_AUTHORITIES_BY_USERNAME_QUERY = 
+    "select username, authority " + 
+    "from authorities " + 
+    "where username = ?";
+// 3. 查看用户作为组成员被授予的权限
+public static final String DEF_GROUP_AUTHORITIES_BY_USERNAME_QUERY = 
+    "select g.id, g.group_name, ga.authority " +
+    "from groups g, group_members gm, group_authorities ga " +
+    "where gm.username = ? " +
+    "and g.id = ga.group_id " +
+    "and g.id = gm.group_id";
+```
+
+要重写以上默认的语句，你可以使用 `.usersByUsernameQuery(/* SQL 语句*/)`，`authoritiesByUsernameQuery(/* SQL 语句*/)` 以及 `groupAuthoritiesByUsername(/* SQL 语句*/)` 这三个方法。但注意使用这三个方法时要遵守规范约束，即都只接受 username 作为参数，同时返回的结果集的 schema 也必须和默认语句的一致。
+
+
+除此之外，一般我们在数据库中存储的都不是明文密码，所以就需要我们对 password 进行 encode ，我们可以使用 `passwordEncoder()` 指定一个 password encoder 。
+
+`passwordEncoder()` 方法接受任何实现了 Spring Security `PasswordEncoder` 接口的实现。Spring Security 的加密模块包含了以下的实现：
+
+- BCryptPasswordEncoder 使用 bcrypt 强哈希加密
+- NoOpPasswordEncoder 不使用任何编码
+- Pbkdf2PasswordEncoder 使用 PBKDF2 加密
+- SCryptPasswordEncoder 使用 scrypt 哈希加密
+- StandardPasswordEncoder 使用 SHA-256 哈希加密
+
+当然你也可以自己实现这个 `PasswordEncoder` 接口来满足你特定的需求。这个接口也非常简单:
+
+```java
+public interface  PasswordEncoder {
+    String encode(CharSequence rawPassword);
+    boolean matches(CharSequence rawPassword, String encodedPassword);
+}
+```
+
+注意 `StandardPasswordEncoder` `MessageDigestPasswordEncoder` 以及 `NoOpPasswordEncoder` 都标记为 **Deprecated**
+
+## LDAP-based user store
+
+要配置 Spring Security 的 LDAP-based authentication ，你可以使用 `ldapAuthentication()` 方法，这个方法类似于 `jdbcAuthentication()` ：
+
+```java
+@Override
+protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+    auth.ldapAuthentication()
+        .userSearchBase("ou=people")
+        .userSearchFilter("(uid={0})")
+        // .groupSearchBase("ou=groups")
+        .groupSearchFilter("member={0}");
+    // 后两个方法会使用提供的过滤条件作用在 LDAP query 上，用于查找 user 和 group 
+    // search 会在 LDAP 的 root 层次上开始，如果要改变这个行为请配置 *SearchBase
+}
+```
+
+LDAP 默认的鉴权策略是通过绑定一个操作，然后由 LDAP 服务器直接校验 user 。另一个是执行比较操作，这回要求发送密码到 LDAP 目录然后询问服务器比对密码是否正确，因为这部分是在 LDAP 服务器中完成的，所以实际的密码依然是保密的。  
+如果你希望自己来做这个密码比对，你可以声明 `passwordCompare()` 方法；默认情况下，login 表单传回来的密码会和 user 的 LDAP entry 的 `userPassword` 属性比对，如果你的 LDAP 将密码保存在别的属性上，可以用 `passwordAttribute()` 指定密码所在的属性名 :
+
+```java
+...
+.passwordCompare()
+.passwordEncoder(new BCrptPasswordEncoder())
+.passwordAttribute("passcode");
+``` 
+
+注意这里也用上了 `passwordEncoder` 来保证在 server-side 的 password comparison 过程中密码依然保密：输入的密码依然会直接传递给 LDAP ，这个过程有可能会被 hacker 截获，因此需要使用 `passwordEncoder` 来加密后传输，不过要求 LDAP 服务器也要采用同样的方法解密。
+
+最大的问题是，LDAP 服务器应该在哪？Spring Security LDAP authentication 假设 LDAP 服务器监听 `localhost:33389` ，不过如果你的服务器在另外一台机器上，可以使用 `contextSource()` 来配置这个 location ：
+
+```java
+@Override
+protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+    auth
+        .ldapAuthentication()
+        .userSearchBase("ou=people")
+        .userSearchFilter("(uid={0})")
+        .groupSearchBase("ou=groups")
+        .groupSearchFilter("member={0}")
+        .passwordCompare()
+        .passwordEncoder(new BCryptPasswordEncoder())
+        .passwordAttribute("passcode")
+        // 返回一个 ContextSourceBuilder
+        .contextSource()
+        // 通过 url() 指定 location
+        .url("ldap://tacocloud.com:389/dc=tacocloud,dc=com");
+}
+```
+
+如果你没有 LDAP 服务器但是又想使用它的功能，Spring Security 提供了内置的 LDAP 服务器，只要将上面的 `.url` 替换为 `.root("dc=tacocloud, dc=com")` 即可；  
+当 LDAP 服务器启动时，他会试图从 classpath 路径的任何 LDIF 文件中加载数据。 LDIF(LDAP Data Interchange Format)是一个普通文本，用标准方式表示 LDAP 数据。每条记录由一行或多行组成，每个都包含一个 `name:value` 键值对。记录由空行分隔；  
+如果你不想 Spring 在 classpath 下查找任何 LDIF 文件，可以通过在 `.root()` 之后调用 `ldif(/* LDIF 文件全路径 */)` 方法显式指定 LDIF 文件路径。
+
+## Customizing user authentication
+
+这里给出的用户自定义身份验证服务是利用了 Spring Data JPA 作为持久化，当然你也可以直接使用 JDBC-based user store 。
+
+### 1. 定义 user domain 以及 persistence
+
+这里实现的 `User` domain 实现了 Spring Security 的 `UserDetails` 接口，它提供了框架所需要的某些必要的用户信息，比如这个 user 会获得什么 authorities 以及账号是否 enabled 或者 locked 等，因此 `getAuthorities()` 需要返回用户被授予的 authorities 的 `Collection` ，而形如 `is___Expired()` 的方法则要返回一个 `boolean` 的值。  
+
+定义了 `User` domain 之后，我们可以接着定义 repository interface ，由于使用 JPA ，所以可以考虑继承 `CrudRepository` interface ，同时必须定义一个 `User findByUsername(String username)` 的方法，因为 **user details service** 会用这个方法通过用户名找到用户。
+
+> 由于使用了 CrudRepository 接口，你可以不用提供 interface 的具体实现了。
+
+### 2. 创建一个 user details service.
+
+Spring Security 的 `UserDetailsService` 是相当直截了当的 interface 。
+
+```java UserDetailsService.java
+public interface UserDetailsService {
+    UserDetails loadUserByUsername(String username) throws UsernameNotFoundException;
+}
+```
+
+非常简单，它只有唯一的 `loadUserByUsername` 方法，需要传入 username 然后返回 `UserDetails` 对象或者抛出 `UsernameNotFoundException` 异常。由于我们的 `User` domain 已经继承了 `UserDetails` ，因此不用再另外实现这个接口 。
+
+所以我们定义一个 `UserRepositoryUserDetailsService` 类，实现 `UserDetailsService` 接口，同时将 `UserRepository` 注入进来实现 `loadUserByUsername` 方法。
+
+实现了 `UserRepositoryUserDetailsService` 类之后，我们还需要修改 Spring Security 配置，让它启用我们自定义的 UserDetails ：
+
+```java
+// 将 PasswordEncoder 注解为 Bean ，那么之后就可以被自动 scan 并依赖注入了
+@Bean
+public PasswordEncoder encoder() {
+    return new StandardPasswordEncoder("53cr3t");
+}
+@Override
+protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+ auth.userDetailsService(userDetailsService)
+     .passwordEncoder(encoder());  // 这里我们对密码进行哈希加密
+}
+```
+
+
+## Securing web requests
+
+尽管加了安全限制，但是对于应用来说并不是所有的页面都需要安全配置，因此需要我们定义自己的 security rule 。在 `WebSecurityConfigurerAdapter` 的另一个 `configure(HttpSecurity http)` 方法中，我们可以在 Web 层面上控制安全级别。对于 `HttpSecurity` 你可以配置以下内容：
+
+- 在请求被处理之前要求必须达到某种安全条件 security condition
+- 配置一个自定义登录页
+- 允许用户登出应用
+- 配置跨域伪装请求的保护
+
+参考下面的例子：
+
+```java
+@Override
+protected void configure(HttpSecurity http) throws Exception {
+    http.authorizeRequests()
+        .antMatchers("/design", "/orders")
+        .hasRole("ROLE_USER")
+        .antMatchers("/", "/**").permitAll();
+    // 这里调用了 authorizeRequest() 返回一个 ExpressionInterceptUrlRegistry 对象，可以指定 URL 路径或者 pattern 以及对于这些指定的安全要求
+    // 这里规定了 /design 和 /orders 需要用户获得 ROLE_USER 的授权
+    // 除此之外所有的请求对于所有的用户来说都是允许的 
+}
+```
+
+注意这些 rule 的顺序非常重要，一般先声明的优先级比后声明的要高。  
+
+`hasRole()` 和 `permitAll()` 只是对于请求路径声明安全性要求的一些组合方法，除此之外还有以下这些：
+
+> 开启了 Spring Security 之后即使配置了 Security rule ， `/h2-console` 依然会存在登不上的情况，主要是因为 h2Console 需要跨域请求，同时 iframe 里面也要配置同源策略。代码如下所示：
+>  ```java
+> http.csrf().ignoringAntMatchers("/h2-console/**")
+>     .and()
+>     .headers().frameOptions().sameOrigin()
+>  ```
+
+
+| 方法 | 描述 |
+|:---|:---|
+| `access(String)` | 当传入的 SpEL expression 计算等价为 `true` 时可以访问 |
+| `anonymous()` | 允许匿名用户访问 |
+| `authenticated()` | 允许通过验证的用户访问 |
+| `denyAll()` | 无条件地拒绝一切访问 |
+| `fullyAuthenticated()` | 允许完全通过身份校验的用户访问（不包括通过 remember-me 的用户） |
+| `hasAnyAuthority(String...)` | 允许拥有任何给定权限的用户访问 |
+| `hasAnyRole(String...)` | 允许任何拥有任何给定角色身份的用户访问 |
+| `hasAuthority(String)` | 允许拥有指定权限的用户访问 |
+| `hasIpAddress(String)` | 允许指定 IP 地址的请求访问 |
+| `hasRole(String)` | 允许拥有指定角色身份的用户访问 | 
+| `not()` | 对任何访问方法的判断进行取反 |
+| `permitAll()` | 无条件地允许任何访问 |
+| `rememberMe()` | 允许通过 remember-me 验证的用户访问 |
+
+> **SpEL** （Spring Expression Language） Spring 表达式语言，在Spring产品组合中，它是表达式计算的基础。它支持在运行时查询和操作对象图，它可以与基于XML和基于注解的Spring配置还有bean定义一起使用。由于它能够在运行时动态分配值，因此可以为我们节省大量Java代码。
+
+为了可以让你更加丰富的定义 Spring requirement ，可以使用 `access()` 方法并提供 SpEL 表达式，为此 Spring Security 还扩充了 SpEL ，提供了几个 security-specifi value ：
+
+| Security expression | description |
+|:---|:---|
+|`authentication`| 用户的 authentication 对象 |
+|`denyAll`| 计算结果总是返回 `false` |
+|`hasAnyRole(list of roles)`| 如果用户拥有任何列表中指定的 role 则返回 `true` |
+|`hasRole(role)`| 如果用户是指定的 role 则返回 `true` |
+|`hasIpAddress(IP address)`| 如果请求来自指定的 IP 地址则返回 `true` |
+|`isAnonymous()`| 如果用户是匿名访问则返回 `true` |
+|`isAuthenticated()`| 如果用户通过了身份验证则返回 `true` |
+|`isFullyAuthenticated()`| 如果用户通过完全身份校验则返回 `true` |
+|`isRememberMe()`| 如果用户通过 remember-me 途径通过身份校验则返回 `true` |
+|`permitAll`| 计算结果总是返回 `true` |
+|`principal` | 用户的 principal 对象 |
+
+下面是一个 `access()` 的例子：
+
+```java
+@Override
+// 要求身份为 ROLE_USER 且当天是星期二才能访问
+protected void configure(HttpSecurity http) throws Exception {
+ http.authorizeRequests()
+    .antMatchers("/design", "/orders")
+    .access("hasRole('ROLE_USER') && " +
+            "T(java.util.Calendar).getInstance().get("+
+            "T(java.util.Calendar).DAY_OF_WEEK) == " +
+            "T(java.util.Calendar).TUESDAY")
+    .antMatchers("/", "/**").access("permitAll");
+}
+```
+
+## Creating a custom login page
+
+我们需要自定义 `/login` 路劲为登录页，因此需要添加这样一个 Controller 。但是由于这个 Controller 只是负责渲染视图，因此可以使用 `WebConfig` 来定义简单的路由：
+
+```java
+@Override
+public void addViewControllers(ViewControllerRegistry registry) {
+    registry.addViewController("/").setViewName("home");
+    registry.addViewController("/login");
+}
+```
+
+剩下的工作就是在 Security Config 上配置了，常用的配置如下所示：
+
+```java
+.and()
+ .formLogin() // 表示自定义登陆页
+ .loginPage("/login")  // 登陆页需要访问的 url （get 请求）
+ .loginProcessingUrl("/authenticate") // 回传登陆信息的 url （post 请求）
+ .usernameParameter("user")  // username 所在的 field name 自定义
+ .passwordParameter("pwd")  // password 所在的 field name 自定义
+ .defaultSuccessUrl("/design", true)  // 登陆成功返回的页面，后面为传递的位置参数
+```
+
+## Logging Out
+
+为了完善整个应用的登入登出，我们需要在 `HttpSecurity` 上补充 logout 的逻辑：
+
+```java
+.and()
+  .logout()
+    .logoutSuccessUrl("/")  // 登出成功返回首页
+```
