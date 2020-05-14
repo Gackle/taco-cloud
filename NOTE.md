@@ -506,3 +506,70 @@ public void addViewControllers(ViewControllerRegistry registry) {
   .logout()
     .logoutSuccessUrl("/")  // 登出成功返回首页
 ```
+
+## Preventing CSRF
+
+CSRF 是一种常见的 Web 攻击手段，Spring Security 有内置的针对 CSRF 的保护机制，在 request 的 attribute 中有一个 `_csrf` 的值，包含一个 token 。你可以通过在页面的 POST 上以 hidden 的形式配置这个值以防止 CSRF 攻击：
+
+```html
+<input type="hidden" name="_csrf" th:value="${_csrf.token}" />
+```
+
+如果使用 Spring MVC 的 JSP tag library 或者 Thymeleaf ，则已经默认内置这一个标签，不需要显式配置，如 Thymeleaf ，只需要给 form 配置了 `th:action` 即可：
+
+```html
+<form method="POST" th:action="@{/login}" id="loginForm " >
+```
+
+> 注意，开启了 Spring Security 之后 POST 页面默认都由于 CSRF 的保护机制而变成了 403 ，因此对于表单内容可以采用以上做法，或者关闭 csrf 保护： `.and().csrf().disable()` ，也可以单独配置某些页面不需要 CSRF ：
+>  ```java
+>   http.csrf().ignoringAntMatchers("/h2-console/**")
+>  ```
+
+## Knowing your user
+
+在 Controller 上有多种方法获取 authentication User 的信息：
+
+1. 在 Controller 中注入 `Principal` 对象
+    ```java
+    @PostMapping
+    public String processOrder(@Valid Order order, Errors errors, SessionStatus sessionStatus, Principal principal) {
+        ...
+        User user = userRepository.findByUsername(
+        principal.getName());
+        order.setUser(user);
+        ...
+    }
+    ```
+
+2. 在 Controller 中注入 `Authentication` 对象
+    ```java
+    @PostMapping
+    public String processOrder(@Valid Order order, Errors errors, SessionStatus sessionStatus, Authentication authentication) {
+       ...
+       User user = (User) authentication.getPrincipal();
+       order.setUser(user);
+       ...
+    }
+    ```
+
+3. 通过 `SecurityContextHolder` 获得 security context ，一般推荐使用这个，可以在应用的任何地方使用而不仅仅是 controller 的 handler 方法中使用。
+
+    ```java
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    User user = (User) authentication.getPrincipal();
+    ```
+4. 通过`@AuthenticationPrincipal` 注解方法的参数
+
+    ```java
+    @PostMapping
+    public String processOrder(@Valid Order order, Errors errors, SessionStatus sessionStatus, @AuthenticationPrincipal User user) {
+       if (errors.hasErrors()) {
+           return "orderForm";
+       }
+       order.setUser(user);
+       orderRepo.save(order);
+       sessionStatus.setComplete();
+       return "redirect:/";
+    }
+    ```

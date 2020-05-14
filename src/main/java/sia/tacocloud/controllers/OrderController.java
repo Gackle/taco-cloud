@@ -1,6 +1,11 @@
 package sia.tacocloud.controllers;
 
 import javax.validation.Valid;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.Errors;
@@ -11,7 +16,11 @@ import org.springframework.web.bind.annotation.SessionAttributes;
 import org.springframework.web.bind.support.SessionStatus;
 import lombok.extern.slf4j.Slf4j;
 import sia.tacocloud.dao.Order;
+import sia.tacocloud.dao.User;
 import sia.tacocloud.jpa.OrderRepository;
+import sia.tacocloud.jpa.UserRepository;
+
+import java.security.Principal;
 
 @Slf4j
 @Controller
@@ -21,7 +30,7 @@ public class OrderController {
 
     private OrderRepository orderRepo;
 
-    public OrderController(OrderRepository orderRepo) {
+    public OrderController(OrderRepository orderRepo, UserRepository userRepo) {
         this.orderRepo = orderRepo;
     }
 
@@ -32,12 +41,16 @@ public class OrderController {
 
     @PostMapping
     public String processOrder(@Valid Order order, Errors errors, SessionStatus sessionStatus) {
-        if(errors.hasErrors()) {
+        if (errors.hasErrors()) {
             return "orderForm";
         }
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User user = (User) authentication.getPrincipal();
+        order.setUser(user);
         orderRepo.save(order);
         sessionStatus.setComplete();
-        log.info("Order submitted: " +  order);
+        log.info("Order submitted: " + order);
         return "redirect:/";
     }
 }

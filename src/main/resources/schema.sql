@@ -47,6 +47,7 @@ create table if not exists Taco_Order (
 	ccNumber varchar(16) not null,
 	ccExpiration varchar(5) not null,
 	ccCVV varchar(3) not null,
+	user bigint not null,
     placedAt timestamp not null
 );
 

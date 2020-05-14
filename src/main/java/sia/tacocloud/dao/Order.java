@@ -57,6 +57,10 @@ public class Order implements Serializable {
             inverseJoinColumns = {@JoinColumn(name = "taco")})
     private List<Taco> tacos = new ArrayList<>();
 
+    @ManyToOne(targetEntity = User.class)
+    @JoinColumn(name = "user")
+    private User user;
+
     public void addDesign(Taco design) {
         this.tacos.add(design);
     }
