@@ -2,6 +2,9 @@ package sia.tacocloud.controllers;
 
 import javax.validation.Valid;
 
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContext;
@@ -30,8 +33,11 @@ public class OrderController {
 
     private OrderRepository orderRepo;
 
-    public OrderController(OrderRepository orderRepo, UserRepository userRepo) {
+    private OrderProps props;
+
+    public OrderController(OrderRepository orderRepo, OrderProps props) {
         this.orderRepo = orderRepo;
+        this.props = props;
     }
 
     @GetMapping("/current")
@@ -52,5 +58,12 @@ public class OrderController {
         sessionStatus.setComplete();
         log.info("Order submitted: " + order);
         return "redirect:/";
+    }
+
+    @GetMapping("/user")
+    public String ordersForUser(@AuthenticationPrincipal User user, Model model) {
+        Pageable pageable = PageRequest.of(0, props.getPageSize());
+        model.addAttribute("orders", orderRepo.findByUserOrderByPlacedAtDesc(user, pageable));
+        return "orderList";
     }
 }

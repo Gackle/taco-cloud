@@ -1,0 +1,14 @@
+{
+  "properties": [
+    {
+      "name": "taco.orders.pageSize",
+      "type": "java.lang.Integer",
+      "description": "Sets the maximum number of orders to display in a list."
+    },
+    {
+      "name": "greeting.welcome",
+      "type": "java.lang.String",
+      "description": "The welcome greeting at the index page."
+    }
+  ]
+}
